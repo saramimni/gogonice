@@ -1,14 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const nicknameContainer = document.getElementById('nickname-container');
-    const todoContainer = document.getElementById('todo-container');
-    const nicknameInput = document.getElementById('nickname-input');
-    const startButton = document.getElementById('start-button');
-    const welcomeMessage = document.getElementById('welcome-message');
     const todoForm = document.getElementById('todo-form');
     const todoInput = document.getElementById('todo-input');
     const todoList = document.getElementById('todo-list');
-
-    let currentUser = null;
     const todosRef = db.collection('todos');
 
     // 시계 기능
@@ -25,18 +18,6 @@ document.addEventListener('DOMContentLoaded', () => {
             weekday: 'long'
         });
     }
-
-    // 닉네임 입력 처리
-    startButton.addEventListener('click', () => {
-        const nickname = nicknameInput.value.trim();
-        if (nickname) {
-            currentUser = nickname;
-            nicknameContainer.style.display = 'none';
-            todoContainer.style.display = 'block';
-            welcomeMessage.textContent = `${nickname}님 환영합니다!`;
-            loadTodos();
-        }
-    });
 
     // 나이스 API 호출
     async function fetchSchoolSchedule() {
@@ -102,22 +83,15 @@ document.addEventListener('DOMContentLoaded', () => {
                             <span class="deadline">${new Date(todo.deadline).toLocaleString()}</span>
                         </div>
                         <div class="actions">
-                            ${todo.userName === currentUser ? 
-                                `<button class="delete-btn">삭제</button>` : ''}
+                            <button class="delete-btn">삭제</button>
                         </div>
                     `;
 
                     const checkbox = li.querySelector('input');
-                    if (todo.userName === currentUser) {
-                        checkbox.addEventListener('change', () => toggleTodo(doc.id, todo.completed));
-                    } else {
-                        checkbox.disabled = true;
-                    }
+                    checkbox.addEventListener('change', () => toggleTodo(doc.id, todo.completed));
 
                     const deleteBtn = li.querySelector('.delete-btn');
-                    if (deleteBtn) {
-                        deleteBtn.addEventListener('click', () => deleteTodo(doc.id));
-                    }
+                    deleteBtn.addEventListener('click', () => deleteTodo(doc.id));
 
                     todoList.appendChild(li);
                 });
@@ -130,7 +104,6 @@ document.addEventListener('DOMContentLoaded', () => {
             await todosRef.add({
                 text,
                 completed: false,
-                userName: currentUser,
                 deadline: deadline,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
@@ -165,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const todoText = todoInput.value.trim();
         const deadline = document.getElementById('deadline-input').value;
         
-        if (todoText && deadline && currentUser) {
+        if (todoText && deadline) {
             addTodo(todoText, deadline);
             todoInput.value = '';
             document.getElementById('deadline-input').value = '';
@@ -176,6 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(updateClock, 1000);
     updateClock();
     displaySchedule();
+    loadTodos();
     setInterval(displaySchedule, 1000 * 60 * 60); // 1시간마다 업데이트
 });
   
