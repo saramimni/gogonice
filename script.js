@@ -9,9 +9,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const todoList = document.getElementById('todo-list');
 
     let currentUser = null;
-
-    // Firestore 컬렉션 참조
     const todosRef = db.collection('todos');
+
+    // 시계 기능
+    function updateClock() {
+        const now = new Date();
+        const clock = document.getElementById('clock');
+        const dateDisplay = document.getElementById('date');
+        
+        clock.textContent = now.toLocaleTimeString('ko-KR', { hour12: false });
+        dateDisplay.textContent = now.toLocaleDateString('ko-KR', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            weekday: 'long'
+        });
+    }
 
     // 닉네임 입력 처리
     startButton.addEventListener('click', () => {
@@ -25,7 +38,54 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 실시간 할일 목록 가져오기
+    // 나이스 API 호출
+    async function fetchSchoolSchedule() {
+        const today = new Date();
+        const formattedDate = today.toISOString().slice(0, 10).replace(/-/g, '');
+        
+        const url = 'https://open.neis.go.kr/hub/SchoolSchedule';
+        const params = new URLSearchParams({
+            ATPT_OFCDC_SC_CODE: 'J10',
+            SD_SCHUL_CODE: '7530475',
+            Type: 'json',
+            AA_YMD: formattedDate
+        });
+
+        try {
+            const response = await fetch(`${url}?${params}`);
+            const data = await response.json();
+            if (data.SchoolSchedule && data.SchoolSchedule[1]) {
+                return data.SchoolSchedule[1].row;
+            }
+            return [];
+        } catch (error) {
+            console.error('일정 가져오기 실패:', error);
+            return [];
+        }
+    }
+
+    // 일정 표시
+    async function displaySchedule() {
+        const schedules = await fetchSchoolSchedule();
+        const todayEvents = document.getElementById('today-events');
+        const weekEvents = document.getElementById('week-events');
+        
+        todayEvents.innerHTML = schedules.length ? '' : '<p class="no-events">오늘 일정이 없습니다.</p>';
+        weekEvents.innerHTML = schedules.length ? '' : '<p class="no-events">이번 주 일정이 없습니다.</p>';
+
+        schedules.forEach(schedule => {
+            const eventElement = `
+                <div class="event-item" data-aos="fade-up">
+                    <div class="event-content">${schedule.EVENT_NM}</div>
+                    <div class="event-date">${schedule.AA_YMD}</div>
+                </div>
+            `;
+            todayEvents.innerHTML += eventElement;
+            weekEvents.innerHTML += eventElement;
+        });
+    }
+
+    // 할일 목록 로드
     function loadTodos() {
         todosRef
             .orderBy('createdAt', 'desc')
@@ -39,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="content">
                             <input type="checkbox" ${todo.completed ? 'checked' : ''}>
                             <span>${todo.text}</span>
-                            <span class="user-info">- ${todo.userName}</span>
+                            <span class="deadline">${new Date(todo.deadline).toLocaleString()}</span>
                         </div>
                         <div class="actions">
                             ${todo.userName === currentUser ? 
@@ -47,7 +107,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                     `;
 
-                    // 체크박스 이벤트 (작성자만 가능)
                     const checkbox = li.querySelector('input');
                     if (todo.userName === currentUser) {
                         checkbox.addEventListener('change', () => toggleTodo(doc.id, todo.completed));
@@ -55,7 +114,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         checkbox.disabled = true;
                     }
 
-                    // 삭제 버튼 이벤트
                     const deleteBtn = li.querySelector('.delete-btn');
                     if (deleteBtn) {
                         deleteBtn.addEventListener('click', () => deleteTodo(doc.id));
@@ -67,12 +125,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 할일 추가
-    async function addTodo(text) {
+    async function addTodo(text, deadline) {
         try {
             await todosRef.add({
                 text,
                 completed: false,
                 userName: currentUser,
+                deadline: deadline,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
         } catch (error) {
@@ -89,7 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 할일 완료 토글
+    // 할일 토글
     async function toggleTodo(id, currentStatus) {
         try {
             await todosRef.doc(id).update({
@@ -104,17 +163,19 @@ document.addEventListener('DOMContentLoaded', () => {
     todoForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const todoText = todoInput.value.trim();
-        if (todoText && currentUser) {
-            addTodo(todoText);
+        const deadline = document.getElementById('deadline-input').value;
+        
+        if (todoText && deadline && currentUser) {
+            addTodo(todoText, deadline);
             todoInput.value = '';
+            document.getElementById('deadline-input').value = '';
         }
     });
 
-    // 엔터키로 닉네임 입력
-    nicknameInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            startButton.click();
-        }
-    });
+    // 초기 실행
+    setInterval(updateClock, 1000);
+    updateClock();
+    displaySchedule();
+    setInterval(displaySchedule, 1000 * 60 * 60); // 1시간마다 업데이트
 });
   
