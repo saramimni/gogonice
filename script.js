@@ -1,83 +1,78 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // 기존 Firebase 관련 코드는 유지...
+    const nicknameContainer = document.getElementById('nickname-container');
+    const todoContainer = document.getElementById('todo-container');
+    const nicknameInput = document.getElementById('nickname-input');
+    const startButton = document.getElementById('start-button');
+    const welcomeMessage = document.getElementById('welcome-message');
+    const todoForm = document.getElementById('todo-form');
+    const todoInput = document.getElementById('todo-input');
+    const todoList = document.getElementById('todo-list');
 
-    // 시계 기능
-    function updateClock() {
-        const now = new Date();
-        const clock = document.getElementById('clock');
-        const dateDisplay = document.getElementById('date');
-        
-        clock.textContent = now.toLocaleTimeString('ko-KR');
-        dateDisplay.textContent = now.toLocaleDateString('ko-KR', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            weekday: 'long'
-        });
-    }
+    let currentUser = null;
 
-    setInterval(updateClock, 1000);
-    updateClock();
+    // Firestore 컬렉션 참조
+    const todosRef = db.collection('todos');
 
-    // 나이스 API 호출 함수
-    async function fetchSchoolSchedule() {
-        const url = 'https://open.neis.go.kr/hub/SchoolSchedule';
-        const params = new URLSearchParams({
-            ATPT_OFCDC_SC_CODE: 'J10',
-            SD_SCHUL_CODE: '7530475',
-            Type: 'json',
-            pSize: 100
-        });
-
-        try {
-            const response = await fetch(`${url}?${params}`);
-            const data = await response.json();
-            return data.SchoolSchedule[1].row;
-        } catch (error) {
-            console.error('일정 가져오기 실패:', error);
-            return [];
+    // 닉네임 입력 처리
+    startButton.addEventListener('click', () => {
+        const nickname = nicknameInput.value.trim();
+        if (nickname) {
+            currentUser = nickname;
+            nicknameContainer.style.display = 'none';
+            todoContainer.style.display = 'block';
+            welcomeMessage.textContent = `${nickname}님 환영합니다!`;
+            loadTodos();
         }
+    });
+
+    // 실시간 할일 목록 가져오기
+    function loadTodos() {
+        todosRef
+            .orderBy('createdAt', 'desc')
+            .onSnapshot((snapshot) => {
+                todoList.innerHTML = '';
+                snapshot.forEach((doc) => {
+                    const todo = doc.data();
+                    const li = document.createElement('li');
+                    li.className = `todo-item ${todo.completed ? 'completed' : ''}`;
+                    li.innerHTML = `
+                        <div class="content">
+                            <input type="checkbox" ${todo.completed ? 'checked' : ''}>
+                            <span>${todo.text}</span>
+                            <span class="user-info">- ${todo.userName}</span>
+                        </div>
+                        <div class="actions">
+                            ${todo.userName === currentUser ? 
+                                `<button class="delete-btn">삭제</button>` : ''}
+                        </div>
+                    `;
+
+                    // 체크박스 이벤트 (작성자만 가능)
+                    const checkbox = li.querySelector('input');
+                    if (todo.userName === currentUser) {
+                        checkbox.addEventListener('change', () => toggleTodo(doc.id, todo.completed));
+                    } else {
+                        checkbox.disabled = true;
+                    }
+
+                    // 삭제 버튼 이벤트
+                    const deleteBtn = li.querySelector('.delete-btn');
+                    if (deleteBtn) {
+                        deleteBtn.addEventListener('click', () => deleteTodo(doc.id));
+                    }
+
+                    todoList.appendChild(li);
+                });
+            });
     }
 
-    // 일정 표시 함수
-    async function displaySchedule() {
-        const schedules = await fetchSchoolSchedule();
-        const todayEvents = document.getElementById('today-events');
-        const weekEvents = document.getElementById('week-events');
-        
-        const today = new Date();
-        const oneWeekLater = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-
-        todayEvents.innerHTML = '';
-        weekEvents.innerHTML = '';
-
-        schedules.forEach(schedule => {
-            const eventDate = new Date(schedule.AA_YMD);
-            const eventElement = `
-                <div class="event-item">
-                    <div class="event-date">${eventDate.toLocaleDateString()}</div>
-                    <div class="event-content">${schedule.EVENT_NM}</div>
-                </div>
-            `;
-
-            if (eventDate.toDateString() === today.toDateString()) {
-                todayEvents.innerHTML += eventElement;
-            }
-
-            if (eventDate >= today && eventDate <= oneWeekLater) {
-                weekEvents.innerHTML += eventElement;
-            }
-        });
-    }
-
-    // Todo 항목 추가 함수 수정
-    async function addTodo(text, deadline) {
+    // 할일 추가
+    async function addTodo(text) {
         try {
             await todosRef.add({
                 text,
                 completed: false,
                 userName: currentUser,
-                deadline: deadline,
                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
             });
         } catch (error) {
@@ -85,20 +80,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 폼 제출 이벤트 수정
+    // 할일 삭제
+    async function deleteTodo(id) {
+        try {
+            await todosRef.doc(id).delete();
+        } catch (error) {
+            console.error('할일 삭제 중 오류 발생:', error);
+        }
+    }
+
+    // 할일 완료 토글
+    async function toggleTodo(id, currentStatus) {
+        try {
+            await todosRef.doc(id).update({
+                completed: !currentStatus
+            });
+        } catch (error) {
+            console.error('할일 상태 변경 중 오류 발생:', error);
+        }
+    }
+
+    // 폼 제출 이벤트
     todoForm.addEventListener('submit', (e) => {
         e.preventDefault();
         const todoText = todoInput.value.trim();
-        const deadline = document.getElementById('deadline-input').value;
-        
-        if (todoText && deadline && currentUser) {
-            addTodo(todoText, deadline);
+        if (todoText && currentUser) {
+            addTodo(todoText);
             todoInput.value = '';
-            document.getElementById('deadline-input').value = '';
         }
     });
 
-    // 초기 실행
-    displaySchedule();
-    setInterval(displaySchedule, 1000 * 60 * 60); // 1시간마다 업데이트
+    // 엔터키로 닉네임 입력
+    nicknameInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            startButton.click();
+        }
+    });
 });
+  
